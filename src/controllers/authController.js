@@ -2,35 +2,58 @@ import { User } from "../models/userModel.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
-export const signupController = async (req, res) => {
-  try {
-    const { email, password, role } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
+const sendError = (res, statusCode, message) => {
+  return res.status(statusCode).json({ error: message });
+};
 
+export const signupController = async (req, res) => {
+
+  try {
+    const { email, password, role } = req.body || {};
+
+    if (!email || !password || !role) {
+      return sendError(res, 400, "Email, password, and role are required.");
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return sendError(res, 409, `User with email ${email} already exists.`);
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({ email, password: hashedPassword, role });
     await newUser.save();
-    res
-      .status(201)
-      .json({ message: `User created successfully: ${newUser.email}` });
+
+    return res.status(201).json({
+      message: "User created successfully",
+      user: {
+        email: newUser.email,
+        role: newUser.role,
+      },
+    });
   } catch (error) {
-    res.status(500).json({ message: "Something went wrong" });
     console.error("Error creating user:", error);
+    return sendError(res, 500, "Internal server error");
   }
 };
 
 export const loginController = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
 
+  try {
+    const { email, password } = req.body || {};
+
+    if (!email || !password) {
+      return sendError(res, 400, "Email and password are required.");
+    }
+
+    const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({ message: `User ${email} not found` });
+      return sendError(res, 404, `User with email ${email} not found.`);
     }
 
     const isPasswordMatch = await bcrypt.compare(password, user.password);
-
     if (!isPasswordMatch) {
-      return res.status(400).json({ message: "Invalid credentials" });
+      return sendError(res, 401, "Invalid credentials.");
     }
 
     const token = jwt.sign(
@@ -40,7 +63,8 @@ export const loginController = async (req, res) => {
     );
 
     return res.status(200).json({
-      token: token,
+      message: "Login successful",
+      token,
       user: {
         email: user.email,
         role: user.role,
@@ -48,6 +72,6 @@ export const loginController = async (req, res) => {
     });
   } catch (error) {
     console.error("Error logging in user:", error);
-    return res.status(500).json({ message: "Something went wrong" });
+    return sendError(res, 500, "Internal server error");
   }
 };
